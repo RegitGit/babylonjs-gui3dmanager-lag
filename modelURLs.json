@@ -1,0 +1,42 @@
+{
+
+    "Models": [{
+        "folder": "Spannspar/",
+        "materials": [
+            "Balkon_A_LR_MAT",
+            "Balkon_B_LR_MAT",
+            "Bodenschatten_MAT",
+            "GewindeKropf_LR_MAT",
+            "Gitter_LR_MAT",
+            "Holz_LR_MAT",
+            "Keilspanner_LR_MAT",
+            "Obj_01_LR_MAT",
+            "Obj_02_LR_MAT",
+            "Obj_03_LR_MAT",
+            "Obj_04_LR_MAT",
+            "Obj_05_LR_MAT",
+            "Platten_LR_MAT",
+            "schraegeGelaender_LR_MAT",
+            "Spannstelle_LR_MAT",
+            "StuetzeBalkon_LR_MAT",
+            "StuetzeTeil_LR_MAT"
+        ]
+    },
+    {
+        "folder": "NeoR/",
+        "materials": [
+            "Bodenschatten_MAT",
+            "export_combo_001_low_mtl",
+            "gold_glavanized_MAT",
+            "Holz_LR_MAT",
+            "Orange_Obj_01_MAT",
+            "Orange_Obj_02_MAT",
+            "Orange_Obj_03_MAT",
+            "Orange_Obj_04_MAT",
+            "Orange_Obj_05_MAT",
+            "Orange_Obj_06_MAT",
+            "Platten_LR_MAT",
+            "silber_galvanisiert_MAT"
+        ]
+    }]  
+}

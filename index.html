@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+        <title>GA700 Showroom</title>
+
+        <!-- Babylon.js -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.6.2/dat.gui.min.js"></script>
+        <script src="https://preview.babylonjs.com/ammo.js"></script>
+        <script src="https://preview.babylonjs.com/cannon.js"></script>
+        <script src="https://preview.babylonjs.com/Oimo.js"></script>
+        <script src="https://preview.babylonjs.com/earcut.min.js"></script>
+        <script src="https://preview.babylonjs.com/babylon.js"></script>
+        <script src="https://preview.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
+        <script src="https://preview.babylonjs.com/proceduralTexturesLibrary/babylonjs.proceduralTextures.min.js"></script>
+        <script src="https://preview.babylonjs.com/postProcessesLibrary/babylonjs.postProcess.min.js"></script>
+        <script src="https://preview.babylonjs.com/loaders/babylonjs.loaders.js"></script>
+        <script src="https://preview.babylonjs.com/serializers/babylonjs.serializers.min.js"></script>
+        <script src="https://preview.babylonjs.com/gui/babylon.gui.min.js"></script>
+        <script src="https://preview.babylonjs.com/inspector/babylon.inspector.bundle.js"></script>
+
+        <!-- <script type="text/javascript" src="jquery-3.6.0.min.js"></script> -->
+        <style>
+            html, body {
+                overflow: hidden;
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+
+            #renderCanvas {
+                width: 100%;
+                height: 100%;
+                touch-action: none;
+                outline: none;
+            }
+
+            #renderCanvasDetail {
+                display: none;
+                width: 70%;
+                height: 70%;
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                margin-right: -50%;
+                transform: translate(-50%, -50%);
+                touch-action: none;
+                outline: none;
+                z-index: 1;
+            }
+        </style>
+    </head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+    <canvas id="renderCanvasDetail"></canvas>
+    <script>
+        var canvasMain = document.getElementById("renderCanvas");
+        var canvasDetail = document.getElementById("renderCanvasDetail");
+
+        ///// POINTER LOCK as long as PointerUp outside of iFrame locks rotation
+        // canvas.requestPointerLock = canvas.requestPointerLock ||
+        //                     canvas.mozRequestPointerLock;
+
+        // document.exitPointerLock = document.exitPointerLock ||
+        //                         document.mozExitPointerLock;
+
+
+        // var dblClickTime = 190;
+        // var clicks = 0;
+        // canvas.onpointerdown = function() {
+        //     clicks++;
+        //     canvas.requestPointerLock();
+        //     if (clicks == 2) {
+        //         resetCamera(true);
+        //         clicks = 0;
+        //     }
+        //     setTimeout(() => {
+        //         clicks = 0;
+        //     }, dblClickTime);
+        // }
+        // canvas.onpointerup = function() {
+        //     document.exitPointerLock();
+        // }
+        /////
+
+        var engine = null;
+        var engineDetail = null;
+        var scene = null;
+        var sceneToRender = null;
+        var sceneToRender2 = null;
+        var createDefaultEngine = function(canvas) { return new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true,  disableWebGL2Support: false}); };
+
+
+    var models = [null, null, null, null, null];
+    var loaded = false;
+    var loading = false;
+    var currentlyLoading = -1;
+
+    
+
+    var generator;
+    var sceneMainGlobal;
+    var progressBar;
+    var progressBarInner;
+    var cameraMain;
+
+    var mainCanvasActive = true;
+
+    var envTexture;
+
+    const LOWER_RADIUS_LIMIT = 0.525;
+    const UPPER_RADIUS_LIMIT = 1.6;
+    var textureAssetsManager;
+
+    async function delayCreateScene() {
+        var scene = new BABYLON.Scene(engine);
+        sceneMainGlobal = scene;
+
+        textureAssetsManager = new BABYLON.AssetsManager(scene);
+        textureAssetsManager.useDefaultLoadingScreen = false;
+        textureAssetsManager.autoHideLoadingUI = false;
+
+        scene.createDefaultCameraOrLight(true, true, true);
+        cameraMain = scene.activeCamera;
+        cameraMain.name = "Main Camera";
+        cameraMain.attachControl(canvasMain, true);
+        //cameraMain.useAutoRotationBehavior = true;
+        
+        cameraMain.wheelPrecision = 750;
+        cameraMain.upperRadiusLimit = UPPER_RADIUS_LIMIT;
+        cameraMain.lowerRadiusLimit = LOWER_RADIUS_LIMIT;
+        cameraMain.panningSensibility = 0;
+        toggleCameraSensibiliy(true, cameraMain);
+        resetCamera(false, cameraMain);
+
+        //engine.registerView(canvasMain, cameraMain);
+
+        //Disable keyboard event
+        cameraMain.keysUp = [];
+        cameraMain.keysDown = [];
+        cameraMain.keysLeft = [];
+        cameraMain.keysRight = [];
+
+        currentCamPositionAnimatable = new BABYLON.Animatable(scene, cameraMain);
+
+        ipc = scene.imageProcessingConfiguration;
+        ipc.vignetteEnabled = true;
+        ipc.vignetteWeight = 0;
+        ipc.vignetteCameraFov = 0;
+
+        buttonEyeMaterial = new BABYLON.StandardMaterial("buttonEyeMaterial", scene);
+        buttonEyeMaterial.useAlphaFromDiffuseTexture = true;
+        buttonEyeMaterial.disableLighting = true;
+        buttonEyeMaterial.diffuseColor = BABYLON.Color3.Black();
+        buttonEyeMaterial.specularColor = BABYLON.Color3.Black();
+        buttonEyeMaterial.emissiveColor = BABYLON.Color3.White();
+
+        let buttonEyeTextureTask = textureAssetsManager.addTextureTask("buttonEye", "textures/EyeButton.png", false, false);            
+        buttonEyeTextureTask.onSuccess = function (task) {
+            buttonEyeMaterial.diffuseTexture = task.texture;
+            buttonEyeMaterial.diffuseTexture.hasAlpha = true;
+        }
+
+        buttonInfoMaterial = new BABYLON.StandardMaterial("buttonInfoMaterial", scene);
+        buttonInfoMaterial.useAlphaFromDiffuseTexture = true;
+        buttonInfoMaterial.disableLighting = true;
+        buttonInfoMaterial.diffuseColor = BABYLON.Color3.Black();
+        buttonInfoMaterial.specularColor = BABYLON.Color3.Black();
+        buttonInfoMaterial.emissiveColor = BABYLON.Color3.White();
+
+        let buttonInfoTextureTask = textureAssetsManager.addTextureTask("buttonInfo", "textures/InfoButton.png", false, false);            
+        buttonInfoTextureTask.onSuccess = function (task) {
+            buttonInfoMaterial.diffuseTexture = task.texture;
+            buttonInfoMaterial.diffuseTexture.hasAlpha = true;
+        }
+
+        //textureAssetsManager.loadAsync();
+
+        buttonBacksideMaterial = new BABYLON.StandardMaterial("buttonBacksideMaterial", scene);
+        buttonBacksideMaterial.disableLighting = true;
+        buttonBacksideMaterial.backFaceCulling = false;
+        buttonBacksideMaterial.emissiveColor = BABYLON.Color3.Black();
+        buttonBacksideMaterial.zOffsetUnits = 5;
+
+        scene.lights[0].dispose();
+        // var light = new BABYLON.DirectionalLight("light1", new BABYLON.Vector3(-2, -3, 1), scene);
+        // light.position = new BABYLON.Vector3(6, 9, 3);
+        // generator = new BABYLON.ShadowGenerator(1024, light);
+        // generator.useBlurExponentialShadowMap = true;
+        // generator.blurKernel = 32;
+
+        envTexture = new BABYLON.CubeTexture("textures/environment.env", scene);
+        scene.environmentTexture = envTexture;
+        scene.environmentIntensity = 1.5;
+        
+        scene.clearColor = BABYLON.Color3.FromHexString("#F3F3F0");
+        // Basic scene is loaded
+        loaded = true;
+        
+        BABYLON.SceneLoader.ShowLoadingScreen = false;
+
+        
+    
+
+        engine.displayLoadingUI();
+        await loadDome(false, false);   
+        await loadImages();
+        engine.hideLoadingUI();
+
+        
+
+        return scene;
+    }
+
+    var sceneDetailGlobal;
+    var cameraDetail;
+    var viewDetail;
+    async function delayCreateDetailScene() {
+        var scene = new BABYLON.Scene(engineDetail);
+        sceneDetailGlobal = scene;
+
+        scene.createDefaultCameraOrLight(true, true, true);
+        cameraDetail = scene.activeCamera;
+        cameraDetail.name = "Detail Camera";
+        //cameraDetail.attachControl(canvasDetail, true);
+        //camera.useAutoRotationBehavior = true;
+        
+        cameraDetail.wheelPrecision = 750;
+        cameraDetail.upperRadiusLimit = UPPER_RADIUS_LIMIT;
+        cameraDetail.lowerRadiusLimit = LOWER_RADIUS_LIMIT;
+        cameraDetail.panningSensibility = 0;
+        toggleCameraSensibiliy(true, cameraDetail);
+        resetCamera(false, cameraDetail);
+
+        //Disable keyboard event
+        cameraDetail.keysUp = [];
+        cameraDetail.keysDown = [];
+        cameraDetail.keysLeft = [];
+        cameraDetail.keysRight = [];
+
+        scene.lights[0].dispose();
+
+        scene.environmentTexture = new BABYLON.CubeTexture("textures/environment.env", scene);
+        scene.environmentIntensity = 1.5;
+        
+        scene.clearColor = BABYLON.Color3.FromHexString("#F3F3F0");
+        
+        let advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI();
+        progressBar = new BABYLON.GUI.Rectangle();
+        progressBar.width = "200px";
+        progressBar.height = "10px";
+        progressBar.isVisible = false;
+        progressBar.background = "black";
+        advancedTexture.addControl(progressBar);
+        
+        progressBarInner = new BABYLON.GUI.Rectangle();
+        //UI_Start.progressBarInner.width = 0;
+        progressBarInner.left = "0px";
+        //UI_Start.progressBarInner.paddingLeft = "4px";
+        progressBarInner.paddingRight = "0px";
+        progressBarInner.height = progressBar.height;
+        progressBarInner.width = "0%";
+        progressBarInner.thickness = 0;
+        progressBarInner.horizontalAlignment = 0;
+        progressBarInner.background = "white";
+        progressBar.addControl(progressBarInner);
+
+        buttonPdfMaterial = new BABYLON.StandardMaterial("buttonPdfMaterial", scene);
+        buttonPdfMaterial.useAlphaFromDiffuseTexture = true;
+        buttonPdfMaterial.disableLighting = true;
+        buttonPdfMaterial.diffuseColor = BABYLON.Color3.Black();
+        buttonPdfMaterial.specularColor = BABYLON.Color3.Black();
+        buttonPdfMaterial.emissiveColor = BABYLON.Color3.White();
+
+        let textureAssetsManagerDetail = new BABYLON.AssetsManager(scene);
+        textureAssetsManagerDetail.useDefaultLoadingScreen = false;
+        textureAssetsManagerDetail.autoHideLoadingUI = false;
+
+        let buttonPdfTextureTask = textureAssetsManagerDetail.addTextureTask("buttonPdf", "textures/FileButton.png", false, false);        
+        buttonPdfTextureTask.onSuccess = function (task) {
+            buttonPdfMaterial.diffuseTexture = task.texture;
+            buttonPdfMaterial.diffuseTexture.hasAlpha = true;
+        }
+
+        textureAssetsManagerDetail.load();
+        
+        // gl = new BABYLON.GlowLayer("emissive glow", scene, { 
+        //     mainTextureFixedSize: 1024,
+        //     blurKernelSize: 64          
+        // });
+        // gl.intensity = 1.5;
+        // gl.customEmissiveColorSelector = function(mesh, subMesh, material, result) {
+        //     if (mesh.name.includes("line ")) {
+        //         let multiplier = mesh.edgesWidth / SLIDING_LINE_WIDTH;
+        //         result.set(0 * multiplier, 0.9 * multiplier, 0.863 * multiplier, 1 * multiplier);
+        //     } else {
+        //         result.set(0, 0, 0, 0);
+        //     }
+        // }
+        sceneDetailGlobal.registerBeforeRender(alphaToAngle);
+
+        return scene;
+    }
+
+    ///// GLOBAL VARS
+    var currentIndex = -1;
+
+    const EXPONATE_COUNT = 8;
+    const CIRCLE_HEIGHT = 0;
+    const CIRCLE_RADIUS = 40
+    const CIRCLE_OFFSET_ROTATION = 0;
+    const LIGHT_DISTANCE = 10;
+    const VIDEO_RADIUS = CIRCLE_RADIUS * 0.13;
+    const PROGRESS_BAR_LENGTH = 25;
+    const THREEDEE_BUTTON_RADIUS = 0.45;
+
+    const TWODEE_BUTTON_COLOR = "#076b00";
+    const TWODEE_BUTTON_DISABLED_COLOR = "#3e5059";
+
+    var exponatProgressPivot = [];
+    var exponatPositions = [];
+    var exponatAngles = [];
+    var exponatSpotlights = [];
+    //var exponatShadowGens = [];
+    var exponatParents = [];
+    var exponatVideos = [];
+    var topLeftButtons = [];
+    //var exponatPickableCubes = [];
+    var exponatPanels = [];
+    var exponatPanelOffsets = [];
+    var exponatButtonBacksides = [];
+    var exponatImages = [];
+    var exponatMesh = [];
+    var exponatChildMeshes = [];
+    var domeTextures = [];
+
+    async function loadImages() {
+        ///// Exponat spot initialization
+        for (let i = 1; i <= EXPONATE_COUNT; i++) {     
+            domeTextures.push(null);
+            
+            let iterationPercentage = (EXPONATE_COUNT + 1 - i) / EXPONATE_COUNT + CIRCLE_OFFSET_ROTATION;
+            let a = 2 * Math.PI * iterationPercentage;
+            let x = CIRCLE_RADIUS * Math.cos(a);
+            let z = CIRCLE_RADIUS * Math.sin(a);
+            let circlePosition = new BABYLON.Vector3(x, CIRCLE_HEIGHT, z);
+            exponatAngles.push(BABYLON.Angle.BetweenTwoPoints(new BABYLON.Vector3(0, CIRCLE_HEIGHT, 0), circlePosition).radians() + Math.PI);
+            let ankathete = Math.cos(BABYLON.Tools.ToRadians(45)) * LIGHT_DISTANCE;   
+            exponatPositions.push(circlePosition);
+            
+            let parent = new BABYLON.TransformNode("Exponat_" + i, sceneMainGlobal);
+            parent.position = circlePosition;
+            parent.lookAt(new BABYLON.Vector3(0, parent.position.y, 0));
+            exponatParents.push(parent);
+            
+            // IMAGES
+
+            var iSettings = imageSettings[i-1]; 
+
+            let imageMaterial = new BABYLON.StandardMaterial("imageMaterial " + i, sceneMainGlobal);
+            imageMaterial.emissiveColor = BABYLON.Color3.White();
+            
+            let image = new BABYLON.MeshBuilder.CreatePlane("image " + i, { size: 1 }, sceneMainGlobal);
+            image.material = imageMaterial;
+            image.billboardMode = BABYLON.AbstractMesh.BILLBOARDMODE_Y;
+            image.parent = parent;
+            image.position = iSettings.positionShift;
+            image.rotation.y = iSettings.rotationShift;
+            image.scaling = iSettings.scale;
+            image.refreshBoundingInfo(false, true);
+            image.computeWorldMatrix(true);
+            image.setEnabled(true);
+            exponatImages.push(image);
+
+            let boundingInfo = image.getBoundingInfo();
+            
+            image.actionManager = new BABYLON.ActionManager(sceneMainGlobal);
+            
+            // On double click
+            image.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnDoublePickTrigger, doubleClickTravel));
+            
+            // 3D GUI
+            let threeDeeGuiParent = new BABYLON.TransformNode("3D GUI Buttons " + i);
+            threeDeeGuiParent.position = boundingInfo.boundingBox.vectors[0].add(iSettings.buttonOffset);
+            threeDeeGuiParent.rotation = new BABYLON.Vector3(0, Math.PI, 0);
+            threeDeeGuiParent.parent = parent;
+            
+            let threeDeeManager = new BABYLON.GUI.GUI3DManager(sceneMainGlobal);
+            let threeDeePanel = new BABYLON.GUI.StackPanel3D(false);
+            threeDeeManager.addControl(threeDeePanel);
+            threeDeePanel.margin = 0.1;
+            threeDeePanel.linkToTransformNode(threeDeeGuiParent);
+            exponatPanels.push(threeDeePanel);
+            
+            threeDeeManager.addControl(threeDeePanel);
+            
+            let threeDeeButtonBacksideParent = new BABYLON.TransformNode("3D GUI Button Backsides " + i);
+            threeDeeButtonBacksideParent.position = new BABYLON.Vector3(0, 0, 0.01);
+            threeDeeButtonBacksideParent.parent = threeDeeGuiParent;
+            exponatButtonBacksides.push(threeDeeButtonBacksideParent);
+
+            addButtonToExponat(threeDeePanel, "Button 1", () => {console.log(i)}, buttonEyeMaterial, sceneMainGlobal, false);
+            addButtonToExponat(threeDeePanel, "Button 2", () => {console.log(i + " 2")}, buttonInfoMaterial, sceneMainGlobal, false);
+        }
+
+        for (let i = 0; i < imageSettings.length; i++) {
+            let settings = imageSettings[i];
+            if (settings.url != "") {
+                let imageAssetManager = new BABYLON.AssetsManager(sceneMainGlobal);
+                imageAssetManager.useDefaultLoadingScreen = false;
+                imageAssetManager.autoHideLoadingUI = false;
+                
+
+                let imageTextureTask = imageAssetManager.addTextureTask("image texture", settings.url, false, true);
+                imageTextureTask.onSuccess = function (task) {
+                    let imageTexture = task.texture;
+                    let imageMaterial = exponatImages[i].material;
+                    imageMaterial.diffuseTexture = imageTexture;
+                    imageMaterial.useAlphaFromDiffuseTexture = true;
+                    imageMaterial.diffuseTexture.hasAlpha = true;
+                }
+                
+                imageAssetManager.loadAsync();
+            }
+        }
+    }
+
+    var buttonEyeMaterial;
+    var buttonInfoMaterial;
+    var buttonPdfMaterial;
+
+    var buttonBacksideMaterial;
+
+    function addButtonToExponat(panel, name, eventFunction, material, scene, makeBillboard) {
+        let disc = new BABYLON.MeshBuilder.CreateDisc(name, { radius: THREEDEE_BUTTON_RADIUS, tessellation: 64 }, scene);
+        if (makeBillboard)
+            disc.billboardMode = BABYLON.AbstractMesh.BILLBOARDMODE_ALL;
+        let button = new BABYLON.GUI.MeshButton3D(disc);
+        //gl.addExcludedMesh(button);
+        panel.addControl(button);
+        button.onPointerUpObservable.add(eventFunction);
+        button.mesh.material = material;
+        button.mesh.enablePointerMoveEvents = true;
+
+        // button.billboardMode = BABYLON.AbstractMesh.BILLBOARDMODE_Y;
+
+        // let buttonBackside = new BABYLON.MeshBuilder.CreateDisc(name + " backside", { radius: THREEDEE_BUTTON_RADIUS, tessellation: 64 }, scene);
+        // buttonBackside.material = buttonBacksideMaterial;
+        // let buttonBacksideParent = exponatButtonBacksides[exponatIndex - 1];
+        // buttonBackside.parent = buttonBacksideParent;
+        // let buttonBacksides = buttonBacksideParent.getChildMeshes();
+        // let buttons = panel.node.getChildMeshes();
+        // // Update button backside positions
+        // for (let i = 0; i < buttonBacksides.length; i++) {
+        //     buttonBacksides[i].position = buttons[i].position.clone();
+        // }
+    }
+            
+    const TRAVELLING_DURATION = 1.8; // seconds
+    var TRAVELLING_EASE = new BABYLON.SineEase();
+    TRAVELLING_EASE.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+    
+    function doubleClickTravel(ev) {
+        try {
+            let mesh = ev.meshUnderPointer;
+            let name = mesh.name;
+            let split = name.split(" ");
+            let pickedIndex = parseInt(split[split.length - 1]);
+            
+            travelToExponat(pickedIndex, TRAVELLING_DURATION, TRAVELLING_EASE);
+        }
+        catch (e) {
+            console.error(e);
+        }
+    }
+    
+    function travelToExponat(exponatNumber, duration, easingFunction) {
+        // travelling from exponat to exponat
+        // if (currentIndex != -1) {
+        //     topLeftButtons[currentIndex - 1].isEnabled = true;
+        //     fadeButtonsForExponat(currentIndex, false, duration, easingFunction);
+        // }
+        currentIndex = exponatNumber;
+        
+        setTravellingLimits(true);
+        animateCameraRelativeToTarget(exponatNumber, 1, duration, easingFunction);
+        // Fade in buttons
+        //fadeButtonsForExponat(currentIndex, true, duration, easingFunction);
+            
+        updateImages(true);
+        toggleFade(exponatNumber);
+    }
+
+    var currentCamPositionAnimatable;
+    var toBlack = false;   
+    var ipc;
+    var animFinished = false;
+
+    function animateCameraRelativeToTarget(exponatNumber, newRadius, duration, easingFunction) {  
+        animFinished = false;     
+        let fpsTimesDuration = ANIMATION_FPS * duration;
+
+        let newTarget = exponatPositions[exponatNumber - 1];
+
+        // let relativeVector = camera.position.clone().subtract(camera.target.clone()).normalize().multiplyByFloats(newRadius, newRadius, newRadius);
+        let relativeVector = camera.position.clone().subtract(newTarget).normalize().multiplyByFloats(newRadius, newRadius, newRadius);
+
+        let newPosition = newTarget.add(relativeVector);
+
+        currentCamPositionAnimatable = BABYLON.Animation.CreateAndStartAnimation("cam pos", camera, "position", ANIMATION_FPS, fpsTimesDuration, camera.position.clone(), newPosition, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT, easingFunction, () => {
+            setTravellingLimits(false);
+            camera.target = new BABYLON.Vector3.Zero();
+            camera.position = camera.target.clone().add(relativeVector);     
+            camera.upperRadiusLimit = 10;       
+            if (textureLoaded) {
+                dome.texture = domeTextures[exponatNumber-1];
+                toggleFade();                
+            }
+            else {
+                animFinished = true;
+            }
+        });
+
+        BABYLON.Animation.CreateAndStartAnimation("cam target", camera, "target", ANIMATION_FPS, fpsTimesDuration * 0.7, camera.target.clone(), newTarget, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT, easingFunction);        
+    }
+
+    var textureLoaded = false;
+    function toggleFade(exponatNumber) {
+        textureLoaded = false;
+        if (domeTextures[exponatNumber-1] === null) {
+            let domeTextureTask = textureAssetsManager.addTextureTask("dome albedo", KUGELMAPPINGS_FOLDER + DOME_URLS[exponatNumber-1] + standardURLs.extension, false, false);            
+            domeTextureTask.onSuccess = function (task) {
+                domeTextures[exponatNumber-1] = task.texture;
+                if (!exponatNumber) return;
+                if (animFinished) {
+                    dome.texture = domeTextures[exponatNumber-1];
+                    toggleFade();
+                }
+                else {
+                    textureLoaded = true;
+                }
+            };
+
+            textureAssetsManager.load(); 
+        }
+        else {
+            textureLoaded = true;
+        }
+
+        toBlack = !toBlack;
+        let fadeT = 0;
+
+        let vignetteWeight = toBlack ? 0 : 4;
+        let vignetteCameraFov = toBlack ? 0 : 3.141;
+
+        var obs = sceneMainGlobal.onBeforeRenderObservable.add(function () {
+            fadeT += engine.getDeltaTime() * 0.0008;
+            ipc.vignetteWeight = BABYLON.Scalar.Lerp(vignetteWeight, toBlack ? 4 : 0, fadeT);
+            ipc.vignetteCameraFov = BABYLON.Scalar.Lerp(vignetteCameraFov, toBlack ? 3.141 : 0, fadeT);
+            if (fadeT <= 0 || fadeT >= 1) {
+                ipc.vignetteWeight = toBlack ? 4 : 0;
+                ipc.vignetteCameraFov = toBlack ? 3.141 : 0;
+                sceneMainGlobal.onBeforeRenderObservable.remove(obs);
+            }
+        });
+    }
+
+    
+
+
+    const LOWER_BETA_LIMIT = 0;
+    const UPPER_BETA_LIMIT = 3.1316;
+                    
+    function setTravellingLimits(isTravelling) {
+        if (isTravelling) {
+            currentCamPositionAnimatable.stop();
+            camera.angularSensibilityX = 9999999;
+            camera.angularSensibilityY = 9999999; 
+
+            //Zoom limit
+            camera.lowerRadiusLimit = 0;
+            camera.upperRadiusLimit = 999999;
+
+            // Beta limit
+            camera.lowerBetaLimit = null;
+            camera.upperBetaLimit = null;
+
+            //panel.isEnabled = false;
+        }
+        else {
+            // Rotating camera
+            camera.angularSensibilityX = ROTATION_SENSIBILITY;
+            camera.angularSensibilityY = ROTATION_SENSIBILITY;
+
+            //Zoom limit
+            camera.lowerRadiusLimit = LOWER_RADIUS_LIMIT;
+            camera.upperRadiusLimit = UPPER_RADIUS_LIMIT;
+
+            // Beta limit
+            camera.lowerBetaLimit = LOWER_BETA_LIMIT;
+            camera.upperBetaLimit = UPPER_BETA_LIMIT;
+
+            //panel.isEnabled = true;
+            for (let i = 0; i < exponatImages.length; i++) {
+                if (i == currentIndex - 1) {
+                    continue;
+                }
+                exponatImages[i].isPickable = true;
+            }
+        }        
+    }
+
+    const USE_ALPHA_BLENDING = true;
+
+    function updateImages(on) {
+        for (let i = 0; i < exponatImages.length; i++) {
+            let image = exponatImages[i];
+            let fpsTimesDuration = ANIMATION_FPS * TRAVELLING_DURATION;     
+            // Turn on mesh
+            //if (i == currentIndex - 1) {
+            if (on) {            
+                if (USE_ALPHA_BLENDING) {        
+                    BABYLON.Animation.CreateAndStartAnimation("image vis", image, "visibility", ANIMATION_FPS, fpsTimesDuration, image.visibility, 0, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT, TRAVELLING_EASE, () => {
+                        image.setEnabled(false);
+                    });                
+                }                 
+            }            
+            // Turn off mesh
+            else {
+                image.setEnabled(true);
+                if (USE_ALPHA_BLENDING) {
+                    BABYLON.Animation.CreateAndStartAnimation("image vis", image, "visibility", ANIMATION_FPS, fpsTimesDuration, image.visibility, 1, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT, TRAVELLING_EASE);
+                }
+            }
+        }
+    }
+
+    ///// DEBUG INSPECTOR ACTIVATION
+    var debugOn = false;
+    canvasMain.addEventListener("keypress", toggleDebugLayer); 
+    canvasDetail.addEventListener("keypress", toggleDebugLayer2); 
+    canvasMain.addEventListener("keypress", toggleDetailView);
+    canvasDetail.addEventListener("keypress", toggleDetailView);
+
+    function toggleDetailView(e) {
+        if (e.key === "e") {
+            canvasDetail.style.display = mainCanvasActive ? "block" : "none";
+            sceneDetailGlobal.getEngine().resize();
+            mainCanvasActive = !mainCanvasActive;
+            if (!mainCanvasActive) {
+                loadModel(spannsparSettings, sceneDetailGlobal);
+            }
+            console.log(cameraMain.inertia);
+        }
+    }
+
+    function toggleDebugLayer(e) {
+        if (e.key != " ") {
+            return;
+        }
+        debugOn = !debugOn;
+        if (debugOn) {
+            sceneMainGlobal.debugLayer.show();
+        }
+        else {
+            sceneMainGlobal.debugLayer.hide();
+        }
+    };
+
+    function toggleDebugLayer2(e) {
+        if (e.key != "q") {
+            return;
+        }
+        debugOn = !debugOn;
+        if (debugOn) {
+            sceneDetailGlobal.debugLayer.show();
+        }
+        else {
+            sceneDetailGlobal.debugLayer.hide();
+        }
+    };
+
+    const CLOSER_DEFAULT_RADIUS = 1;
+    const FARTHER_DEFAULT_RADIUS = 1.5;
+    const MEDIUM_DEFAULT_RADIUS = CLOSER_DEFAULT_RADIUS + (FARTHER_DEFAULT_RADIUS - CLOSER_DEFAULT_RADIUS) * 0.5;
+
+    function resetCamera(useAnimation, camera) {
+        let pos;
+        let rad;
+        switch (currentModel) {
+            case 3:
+                pos = new BABYLON.Vector3(-0.8767, 0.2976, 0.8767);
+                rad = FARTHER_DEFAULT_RADIUS;
+                break;
+            case 4:
+                pos = new BABYLON.Vector3(-0.6446, 0.2189, 0.6446);
+                rad = MEDIUM_DEFAULT_RADIUS;
+                break;
+            default:
+                pos = new BABYLON.Vector3(-0.4125, 0.1401, 0.4125);
+                rad = CLOSER_DEFAULT_RADIUS;
+                break;
+        }
+        
+        if (useAnimation) {
+            let camPos = camera.position.clone();
+            if (camPos.x.toFixed(4) == pos.x && camPos.y.toFixed(4) == pos.y && camPos.z.toFixed(4) == pos.z) {
+                return;
+            }
+            toggleCameraSensibiliy(false, camera);
+            if (camera.radius < rad) {
+                BABYLON.Animation.CreateAndStartAnimation("camera radlim", camera, "lowerRadiusLimit", ANIMATION_FPS, ANIMATION_FPS*MODEL_TRANSITION_TIME*0.9, camera.radius, rad, 0, TRAVELLING_EASE_OUT);
+                BABYLON.Animation.CreateAndStartAnimation("camera pos", camera, "position", ANIMATION_FPS, ANIMATION_FPS*MODEL_TRANSITION_TIME, camera.position.clone(), pos, 0, TRAVELLING_EASE_OUT, () => {
+                    toggleCameraSensibiliy(true, camera);
+                });
+            }
+            else if (camera.radius > rad) {
+                BABYLON.Animation.CreateAndStartAnimation("camera pos", camera, "position", ANIMATION_FPS, ANIMATION_FPS*MODEL_TRANSITION_TIME, camera.position.clone(), pos, 0, TRAVELLING_EASE_OUT);
+                BABYLON.Animation.CreateAndStartAnimation("camera radlim", camera, "lowerRadiusLimit", ANIMATION_FPS, ANIMATION_FPS*MODEL_TRANSITION_TIME, camera.radius, rad, 0, TRAVELLING_EASE_OUT, () => {
+                    toggleCameraSensibiliy(true, camera);
+                });
+            }
+            else {
+                camera.lowerRadiusLimit = rad;
+                BABYLON.Animation.CreateAndStartAnimation("camera pos", camera, "position", ANIMATION_FPS, ANIMATION_FPS*MODEL_TRANSITION_TIME, camera.position.clone(), pos, 0, TRAVELLING_EASE_OUT, () => {
+                    toggleCameraSensibiliy(true, camera);
+                });
+            }
+        }
+        else {
+            camera.alpha = Math.PI * 1.6;
+            camera.beta = Math.PI * 0.425;
+            camera.radius = rad;
+        }
+    }
+
+    function map(value, start1, end1, start2, end2) {
+        return start2 + (value - start1) * (end2 - start2) / (end1 - start1);
+    }
+
+    function mod(n, m) {
+        return ((n % m) + m) % m;
+    }
+
+    var oldAlpha;
+    var keepDistance = false;
+    function alphaToAngle(camera) {
+        if (oldAlpha == cameraDetail.alpha)
+        {
+            return;
+        }
+        oldAlpha = cameraDetail.alpha;
+        
+        let diff;
+        let max;
+        let percentage;
+        if (keepDistance) {
+            diff = cameraDetail.radius - cameraDetail.lowerRadiusLimit;
+            max = cameraDetail.lowerRadiusLimit - cameraDetail.upperRadiusLimit;
+            percentage = diff / max;
+        }
+
+        let alpha = mod(cameraDetail.alpha, Math.PI * 2);
+
+        let newRadius;
+        let settings = modelSettings[currentModel];
+
+        if (!settings) return;
+        
+        if (alpha < Math.PI * 0.5) { // right to back
+            newRadius = map(alpha, 0, Math.PI * 0.5, settings.rightRadius, settings.backRadius);
+        }
+        else if (alpha > Math.PI * 0.5 && alpha <= Math.PI) { // back to left
+            newRadius = map(alpha, Math.PI * 0.5, Math.PI, settings.backRadius, settings.leftRadius);
+        }
+        else if (alpha > Math.PI && alpha < Math.PI * 1.5) { // left to front
+            newRadius = map(alpha, Math.PI, Math.PI * 1.5, settings.leftRadius, settings.frontRadius);
+        }
+        else if (alpha > Math.PI * 1.5 && alpha <= Math.PI * 2) { // front to right
+            newRadius = map(alpha, Math.PI * 1.5, Math.PI * 2, settings.frontRadius, settings.rightRadius);
+        }
+        cameraDetail.lowerRadiusLimit = newRadius;
+
+        if (keepDistance) {
+            let betaDiff = Math.abs(Math.PI * 0.5 - cameraDetail.beta);
+            let betaPercentage = map(betaDiff, 0, Math.PI * 0.5, 1, 0);
+            max = cameraDetail.lowerRadiusLimit - cameraDetail.upperRadiusLimit;
+            cameraDetail.radius = cameraDetail.lowerRadiusLimit + max * percentage;
+        }
+    }
+    
+
+    const ROTATION_SENSIBILITY = 3000;
+    
+    function toggleCameraSensibiliy(turnOn, camera) {
+        if (turnOn) {
+            camera.lowerRadiusLimit = LOWER_RADIUS_LIMIT;
+        }
+        camera.angularSensibilityX = turnOn ? ROTATION_SENSIBILITY : 9999999;
+        camera.angularSensibilityY = turnOn ? ROTATION_SENSIBILITY : 9999999;
+        camera.wheelPrecision = turnOn ? 750 : 9999999;
+    }
+
+    function setCurrentModel(moduleIndex) {
+        currentModel = moduleIndex;
+    }
+
+    var currentModel = -1;
+    var currentImportTask;
+    var currentlyLoading = -1;
+
+    function loadModel(settings, scene) {
+        let modelIndex = settings.index;
+        if (!loaded || (currentlyLoading == modelIndex && currentlyLoading != -1)) {
+            return;
+        }
+        if (loading)
+        {
+            cancelLoading();
+        }
+        setCurrentModel(modelIndex);
+        if (models[modelIndex] == null) {
+            setLoading(true, modelIndex);
+            let modelName = settings.name;
+            resetGlobalLoadVars();
+            currentImportTask = BABYLON.SceneLoader.ImportMesh("", settings.rootUrl, settings.fileName, scene, function (meshes) {
+                setLoading(false);
+                let modelParent = meshes[0];
+                settings.parent = modelParent;
+                modelParent.position = settings.positionShift;
+                if (settings.rotationShift != 0) {
+                    modelParent.rotate(BABYLON.Vector3.Up(), settings.rotationShift);
+                }
+                modelParent.scaling = settings.scale;
+                modelParent.name = modelName;                
+                models[modelIndex] = modelParent;
+
+                for (let i = 1; i < meshes.length; i++) {
+                    const mesh = meshes[i];
+                    const material = mesh.material;
+                    if (material.metallicTexture) {
+                        material.useRoughnessFromMetallicTextureAlpha = false;
+                        material.useAmbientOcclusionFromMetallicTextureRed = true;
+                        material.useRoughnessFromMetallicTextureGreen = true;
+                        material.useMetallnessFromMetallicTextureBlue = true;
+                    }
+                    if (material.transparencyMode != 0) {
+                        material.metallicF0Factor = 0;
+                    }
+                }
+                    
+                loadNextTexture(modelIndex, scene);
+                
+                activateCorrectModel(currentModel);
+            }, 
+            function(eventData) {
+                adjustProgressBar(eventData);
+            });
+        }
+        else {
+            activateCorrectModel(currentModel);
+        }
+    }
+
+
+    const MODELS_ROOT_URL = "models/";
+
+    const MODEL_NAMES = [
+        "GLB_Spannspar-tc.glb",
+        "GLB_NeoR-tc.glb"
+    ]
+
+    var modelSettings = [];
+    var hotspotSettings = [];
+    var imageSettings = [];
+
+    function ModelSettings(index, rootUrl, fileName, positionShift, rotationShift, scale, name, parent,
+        rightRadius, backRadius, leftRadius, frontRadius, hotspots) {
+        this.index = index;
+        this.rootUrl = rootUrl;
+        this.fileName = fileName,
+        this.positionShift = positionShift;
+        this.rotationShift = rotationShift;
+        this.scale = scale;
+        this.name = name;
+        this.parent = parent;
+        this.rightRadius = rightRadius;
+        this.backRadius = backRadius;
+        this.leftRadius = leftRadius;
+        this.frontRadius = frontRadius;
+        this.hotspots = hotspots;
+    }
+
+    var spannsparSettings = new ModelSettings(0, MODELS_ROOT_URL, MODEL_NAMES[0], new BABYLON.Vector3(-0.23, -0.03, 0.066), 0, new BABYLON.Vector3(-0.001, 0.001, 0.001), "Spannspar", null, 1.1, 0.7, 1, 0.6, []);
+    modelSettings.push(spannsparSettings);
+    
+    var neorSettings = new ModelSettings(1, MODELS_ROOT_URL, MODEL_NAMES[1], new BABYLON.Vector3(-0.309, -0.062, -0.412), 0, new BABYLON.Vector3(0.001, 0.001, 0.001), "NeoR", null, 1.1, 0.7, 1, 0.6, []);
+    modelSettings.push(neorSettings);
+
+    modelSettings.push(neorSettings);
+    modelSettings.push(neorSettings);
+    modelSettings.push(neorSettings);
+    modelSettings.push(neorSettings);
+    modelSettings.push(neorSettings);
+    modelSettings.push(neorSettings);
+
+
+    const HOTSPOT_TYPE = {
+        pdf: 0,
+        video: 1,
+        hyperlink: 2
+    }
+
+    function HotspotSettings(index, type, url, position, rotationShift, scale, name, parent) {
+        this.index = index;
+        this.type = type;
+        this.url = url;
+        this.position = position;
+        this.rotationShift = rotationShift;
+        this.scale = scale;
+        this.name = name;
+        this.parent = parent;
+    }
+    var spannsparHotspot1 = new HotspotSettings(0, HOTSPOT_TYPE.pdf, "pdfs/Paschal_Handbuch.pdf", new BABYLON.Vector3(0, 0, 0), 0, 0.04, "HOTSPOT_1_PDF", null);
+    spannsparSettings.hotspots.push(spannsparHotspot1);
+
+    function ImageSettings(index, url, positionShift, rotationShift, scale, name, parent, buttonOffset) {
+        this.index = index;
+        this.url = url;
+        this.positionShift = positionShift;
+        this.rotationShift = rotationShift;
+        this.scale = scale;
+        this.name = name;
+        this.parent = parent;
+        this.buttonOffset = buttonOffset;
+    }
+
+    var imageSettings1 = new ImageSettings(0, "textures/DigiDemo_Preview.png", new BABYLON.Vector3(0, 0, 0), 0, new BABYLON.Vector3(5, 5, 5), "First", null, new BABYLON.Vector3(-1, -2.4, 0.3));
+    imageSettings.push(imageSettings1);
+    var imageSettings2 = new ImageSettings(0, "textures/Grundfoss_Preview.png", new BABYLON.Vector3(0, 0, 0), 0, new BABYLON.Vector3(5, 5, 5), "Second", null, new BABYLON.Vector3(-1, -2.4, 0.3));
+    imageSettings.push(imageSettings2);
+
+    imageSettings.push(imageSettings2);
+    imageSettings.push(imageSettings2);
+    imageSettings.push(imageSettings2);
+    imageSettings.push(imageSettings2);
+    imageSettings.push(imageSettings2);
+    imageSettings.push(imageSettings2);
+
+    function setLoading(isLoading, currentIndex) {
+        loading = isLoading;
+
+        progressBar.isVisible = isLoading;
+        stopToggle = isLoading;
+        currentlyLoading = isLoading ? currentIndex : -1;
+    }
+
+    
+    //TODO: correct cancelling even when its busy 
+    function cancelLoading() {
+        // Makeshift fix
+        if (progressPercentage >= 0.7) {
+            return;
+        }
+        (currentImportTask)?.onDisposeObservable?.notifyObservers(currentImportTask);
+        setLoading(false);
+    }
+
+    const KUGELMAPPINGS_FOLDER = "kugelmappings/"
+    const DOME_START_URL = "paschal_baustelle_00_start";
+    const DOME_URLS = [
+        "paschal_baustelle_01_besonderheiten",
+        "paschal_baustelle_02_Deckenschalung",
+        "paschal_baustelle_03_Stuetzboecke",
+        "paschal_baustelle_04_Rundschalung",
+        "paschal_baustelle_05_Stuetzenschalung",
+        "paschal_baustelle_06_Waende",
+        "paschal_baustelle_07_Arbeitssicherheit",
+        "paschal_baustelle_08_Fundamente"
+    ]
+
+    var dome;
+
+    async function loadDome(addGround, addXR) {
+        //Dome
+        dome = new BABYLON.PhotoDome(
+            "DefaultDome", "",
+            {
+                resolution: 32,
+                size: 500
+            },
+            sceneMainGlobal
+        );
+
+        dome.isPickable = false;
+        dome.mesh.isPickable = false;
+        dome.mesh.useDirectMapping = true;
+        dome.position = new BABYLON.Vector3(0, 0, 0);
+        dome.rotation = new BABYLON.Vector3(0, Math.PI * 0.5, 0);
+        dome.material.disableLighting = true;
+
+        let domeTextureTask = textureAssetsManager.addTextureTask("dome albedo", KUGELMAPPINGS_FOLDER + DOME_START_URL + standardURLs.extension, false, false);            
+        domeTextureTask.onSuccess = function (task) {
+            dome.texture = task.texture;
+        };
+
+        // GROUND
+        if (addGround) {
+            ground = BABYLON.Mesh.CreateGround("ground", 500, 500, 1, scene);
+            ground.receiveShadows = true;
+            ground.position = new BABYLON.Vector3(0, -0.01, 0);
+            ground.rotation = new BABYLON.Vector3(0, Math.PI * 0.5, 0);
+            //ground.scaling = new BABYLON.Vector3(500.0, 500.0, 1.0);
+            ground.alphaIndex = 1;        
+            
+            groundMaterial = new BABYLON.PBRMaterial("ground_MAT", scene);
+            groundMaterial.maxSimultaneousLights = 24;
+            groundMaterial.metallic = 0;
+            groundMaterial.roughness = 0.86;
+            groundMaterial.specularIntensity = 0;
+            groundMaterial.albedoColor = BABYLON.Color3.FromHexString("#6187A7").toLinearSpace();        
+            groundMaterial.useRoughnessFromMetallicTextureAlpha = false;
+            groundMaterial.useRoughnessFromMetallicTextureGreen = true;
+            groundMaterial.useAmbientOcclusionFromMetallicTextureRed = true;       
+            ground.material = groundMaterial;
+            
+            let groundAlbedoTextureTask = textureAssetsManager.addTextureTask("ground albedo", GROUND_ALBEDO_URL, false, false);            
+            groundAlbedoTextureTask.onSuccess = function (task) {
+                groundMaterial.albedoTexture = task.texture;  
+                groundMaterial.albedoTexture.uScale = 48;
+                groundMaterial.albedoTexture.vScale = 48;
+            };
+        }
+
+        textureAssetsManager.onFinish = 
+        () => {
+            textureAssetsManager.reset();
+        }     
+
+        
+        // BABYLON.SceneLoader.ImportMesh(undefined, VERLAUF_MESH_URL, "", scene, (meshes) => {
+        //     let verlauf = meshes[1];
+        //     verlauf.alphaIndex = 1.1;
+        //     verlauf.scaling = new BABYLON.Vector3(24, 8, 24);
+        //     let mat = verlauf.material;
+        //     mat.albedoColor = BABYLON.Color3.FromHexString("#5589B4").toLinearSpace();
+        //     mat.emissiveColor = BABYLON.Color3.Black();
+        //     mat.disableLighting = true;
+        //     mat.alpha = 0.43;
+        //     mat.albedoTexture.wrapU = BABYLON.Texture.CLAMP_ADDRESSMODE;
+        //     mat.albedoTexture.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+        //     mat.unlit = true;
+        // });
+        
+
+            
+        // if (USE_BILLBOARD_OFF_IMAGES) {
+        //     await loadimage(1, false);
+        // }
+
+        await textureAssetsManager.loadAsync();     
+
+        ////// XR
+        if (addXR) {
+            // Is XR supported?       
+            const xrSupport = await BABYLON.WebXRSessionManager.IsSessionSupportedAsync('immersive-vr');
+            if (!xrSupport) {
+                alert("No device detected OR this browser does not support WebXR");
+            } 
+            else {
+                // XR
+                const xrHelper = await scene.createDefaultXRExperienceAsync({
+                    floorMeshes: [ground]
+                });
+
+                // height change - move the reference space negative 2 units (up two units):
+                const heightChange = new XRRigidTransform({
+                    x: 0,
+                    y: -2,
+                    z: 0
+                });
+                // get a new reference space object using the current reference space
+                //const newReferenceSpace = xrHelper.baseExperience.sessionManager.referenceSpace.getOffsetReferenceSpace(heightChange);
+                // update the session manager to start using the new space:
+            // xrHelper.baseExperience.sessionManager.baseReferenceSpace = newReferenceSpace;
+                console.log(xrHelper.baseExperience.camera);
+
+                const featuresManager = xrHelper.baseExperience.featuresManager;
+
+                teleportation = featuresManager.enableFeature(BABYLON.WebXRFeatureName.TELEPORTATION, "stable", {
+                    xrInput: xrHelper.input,
+                    floorMeshes: [ground],
+                    defaultTargetMeshOptions: {
+                        disableLighting: true,
+                    },
+                    renderingGroupId: 1               
+                });      
+                teleportation.backwardsMovementEnabled = false;
+                xrHelper.input.onControllerAddedObservable.add((controller) => {
+                    controller.onMotionControllerInitObservable.add((motionController) => {
+                        const xr_ids = motionController.getComponentIds();
+                        let thumbstickComponent = motionController.getComponent(xr_ids[2]);//xr-standard-thumbstick
+                        thumbstickComponent.onButtonStateChangedObservable.add(() => {
+                            if (thumbstickComponent.pressed) {
+                                console.log("telporting start");
+                            }else{
+                                console.log("telporting end");
+                            }
+                        });
+                    });  
+                });
+            } 
+        }      
+    }
+
+    
+
+    const MODEL_TRANSITION_TIME = 0.85;
+
+    function activateCorrectModel(index) {
+        for (let i = 0; i < models.length; i++) {
+            const element = models[i];
+            if (element == null || element == undefined) {
+                continue;
+            }
+            
+            if (i == index) {
+                element.setEnabled(true);
+            }
+            else {
+                element.setEnabled(false);
+            }
+        }
+
+
+        // Hotspots
+        let settings = modelSettings[index];
+        for (let i = 0; i < settings.hotspots.length; i++) {
+            const hotspotSettings = settings.hotspots[i];
+
+            let threeDeeGuiParent = new BABYLON.TransformNode("3D Hotspot " + (i+1));
+            threeDeeGuiParent.position = hotspotSettings.position;
+            threeDeeGuiParent.rotation = new BABYLON.Vector3(0, Math.PI, 0);
+            threeDeeGuiParent.scaling = new BABYLON.Vector3(hotspotSettings.scale, hotspotSettings.scale, hotspotSettings.scale);
+            //threeDeeGuiParent.parent = parent;
+            
+            let threeDeeManager = new BABYLON.GUI.GUI3DManager(sceneDetailGlobal);
+            let threeDeePanel = new BABYLON.GUI.StackPanel3D(false);
+            threeDeeManager.addControl(threeDeePanel);
+            threeDeePanel.margin = 0.1;
+            threeDeePanel.linkToTransformNode(threeDeeGuiParent);
+            
+            threeDeeManager.addControl(threeDeePanel);
+
+            addButtonToExponat(threeDeePanel, "Hotspot", () => {console.log(i)}, buttonPdfMaterial, sceneDetailGlobal, true);
+        }
+        
+        let model = models[currentModel];
+        if (!model) {
+            return;
+        }
+
+        // for (let i = 0; i < modelAnimations.length; i++) {
+        //     const element = modelAnimations[i];
+        //     element.stop();
+        // }
+    }
+
+    const ANIMATION_FPS = 30;
+    var TRAVELLING_EASE_IN = new BABYLON.SineEase();
+    TRAVELLING_EASE_IN.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEIN);
+    var TRAVELLING_EASE_OUT = new BABYLON.SineEase();
+    TRAVELLING_EASE_OUT.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEOUT);
+    var modelAnimations = [];
+
+    // function animateModelTowards(model, rotation, position, duration) {
+    //     modelAnimations[0] = BABYLON.Animation.CreateAndStartAnimation("model position", model, "position", ANIMATION_FPS, ANIMATION_FPS*duration, model.position.clone(), position, 0, TRAVELLING_EASE_OUT);
+    //     modelAnimations[1] = BABYLON.Animation.CreateAndStartAnimation("model rotation", model, "rotation", ANIMATION_FPS, ANIMATION_FPS*duration, model.rotation.clone(), rotation, 0, TRAVELLING_EASE_OUT);
+    // }
+
+    var prevTotal = 0;
+    var prevLoaded = 0;
+    var accLoaded = 0;
+    var accTotal = 0;
+    var progressPercentage = 0;
+    var time = 0;
+
+    function adjustProgressBar(evt) {
+        if (!evt.lengthComputable) {
+            return;
+        }
+
+        let loaded = evt.loaded;
+        accLoaded += loaded - prevLoaded;
+        prevLoaded = loaded;
+
+        let total = evt.total;
+        // new section loading
+        if (prevTotal != total) {
+            let leftover = prevTotal - prevLoaded;
+            accLoaded += leftover;
+            accTotal += total;
+            prevTotal = total;
+        }
+        progressPercentage = (accLoaded / accTotal).toFixed(2);
+        let oneHundred = progressPercentage * 101;
+        time += sceneMainGlobal.getEngine().getDeltaTime() * 0.5;
+        time = BABYLON.Scalar.Clamp(time, 0, 1);
+        let lerpedValue = Math.ceil(BABYLON.Scalar.Lerp(0, oneHundred, time));
+        progressBarInner.width = lerpedValue + "%";
+    }
+
+    function resetGlobalLoadVars() {
+        prevTotal = 0;
+        prevLoaded = 0;
+        accLoaded = 0;
+        accTotal = 0;
+        progressPercentage = 0;
+        time = 0;
+    }
+
+    // TEXTURES
+    var modelURLs;
+
+    fetch("modelURLs.json")
+    .then(response => response.json())
+    .then(data => {
+        modelURLs = data;
+    });
+
+    const standardURLs = {
+        "textureFolder": "textures/",
+        "baseColor": "_baseColor",
+        "normal": "_normal",
+        "metallic": "_occlusionRoughnessMetallic",
+        "extension": ".ktx2"       
+    }
+
+
+    function loadNextTexture(modelIndex, scene) {
+        var runtimeTextureAssetsManager = new BABYLON.AssetsManager(scene);
+        runtimeTextureAssetsManager.useDefaultLoadingScreen = false;
+        runtimeTextureAssetsManager.autoHideLoadingUI = false;
+
+        function addTextureTask(taskName, url, doInvertY, successFunction) {  
+            let textureTask = runtimeTextureAssetsManager.addTextureTask(taskName, url, false, doInvertY);
+            textureTask.onSuccess = successFunction;
+        }
+
+        
+        var allMaterials = getAllMaterialsFor(modelSettings[modelIndex].parent);
+
+        let data = modelURLs.Models[modelIndex];
+
+        for (let i in data.materials) {
+            let folderMatName = data.folder + data.materials[i];
+            addTextureTask(folderMatName, standardURLs.textureFolder + folderMatName + standardURLs.metallic + standardURLs.extension, false, (task) => { updateTexture(data.materials[i], allMaterials, task.texture, "metallicTexture") });
+            addTextureTask(folderMatName, standardURLs.textureFolder + folderMatName + standardURLs.normal + standardURLs.extension, false, (task) => { updateTexture(data.materials[i], allMaterials, task.texture, "bumpTexture") });
+            addTextureTask(folderMatName, standardURLs.textureFolder + folderMatName + standardURLs.baseColor + standardURLs.extension, false, (task) => { updateTexture(data.materials[i], allMaterials, task.texture, "albedoTexture") });
+        }
+
+        runtimeTextureAssetsManager.load();
+    }
+
+    function getAllMaterialsFor(node) {
+        const allMeshes = node.getChildMeshes();
+        var allMaterials = [];
+        for (let i = 0; i < allMeshes.length; i++) {
+            let mat = allMeshes[i].material;
+            if (!allMaterials.includes(mat))
+                allMaterials.push(mat);            
+        }
+        return allMaterials;
+    }
+
+    ////// Texture apply functions
+    
+    function updateTexture(materialName, materials, texture, textureToChange) {
+        let material;
+        for (let i = 0; i < materials.length; i++) {
+            if (materials[i].name === materialName) {
+                material = materials[i];
+                break;
+            }
+        }
+        
+        texture = copyTextureOffsetScale(material[textureToChange], texture);
+        texture.hasAlpha = material[textureToChange].hasAlpha;
+        material[textureToChange].dispose();
+        material[textureToChange] = texture;
+        if (textureToChange === "metallicTexture" && material.ambientTexture) {
+            material.ambientTexture.dispose();
+            material.ambientTexture = null;
+        }
+    }
+
+    function copyTextureOffsetScale(original, newTexture) {
+        newTexture.uOffset = original.uOffset;
+        newTexture.vOffset = original.vOffset;
+        newTexture.uScale = original.uScale;
+        newTexture.vScale = original.vScale;
+
+        return newTexture;
+    }
+
+    function toggleAutoRotate(turnOn) {
+        scene.activeCamera.useAutoRotationBehavior = turnOn;
+    }
+    
+    
+
+    ////// HOLO & SLIDING LINES
+
+    var gl;
+    
+
+    window.initFunction = async function() {               
+        var asyncEngineCreation = async function(canvas) {
+            try {
+            return createDefaultEngine(canvas);
+            } catch(e) {
+            console.log("the available createEngine function failed. Creating the default engine instead");
+            return createDefaultEngine(canvas);
+            }
+        }
+
+        window.engine = await asyncEngineCreation(canvasMain);
+        window.engineDetail = await asyncEngineCreation(canvasDetail);
+        if (!engine) throw 'engine should not be null.';
+        window.sceneMain = delayCreateScene();
+        window.sceneDetail = delayCreateDetailScene();};
+        initFunction().then(() => {
+            sceneToRender = sceneMainGlobal;    
+            sceneToRender2 = sceneDetailGlobal;  
+            engine.runRenderLoop(function () {
+                if (sceneToRender && sceneToRender.activeCamera && mainCanvasActive) {
+                    sceneToRender.render();
+                }
+            });
+            engineDetail.runRenderLoop(function () {
+                if (sceneToRender2 && sceneToRender2.activeCamera && !mainCanvasActive) {
+                    sceneToRender2.render();
+                }
+            });
+        });
+
+        // Resize
+        window.addEventListener("resize", function () {
+            engine.resize();
+            engineDetail.resize();
+        });
+    </script>
+</body>
+</html>
